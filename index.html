@@ -67,7 +67,7 @@
             border-radius: 8px;
             color: #2c3e50;
             border: 1px solid #e0e6ed;
-            word-break: break-all;
+            word-break: break-word;
         }
     </style>
 </head>
@@ -116,30 +116,47 @@
 
         async function connectBLE() {
             try {
-                setStatus("Suche Bike...");
+                setStatus("Suche gekoppeltes Bike...");
                 const dev = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
                     optionalServices: [SPECIALIZED_SERVICE]
                 });
                 
-                setStatus("Verbinde mit Bike...");
+                setStatus("Verbinde GATT-Server...");
                 const server = await dev.gatt.connect();
 
-                setStatus("Fordere Zugriffsrechte an...");
-                const service = await server.getPrimaryService(SPECIALIZED_SERVICE);
-                targetCharacteristic = await service.getCharacteristic(SPECIALIZED_CHAR);
+                setStatus("Suche Steuerungskanal...");
+                targetCharacteristic = null;
 
-                // Versuche eine Test-Authentifizierung durch Lesen der Eigenschaft
+                // 1. Direktversuch über Specialized UUID
                 try {
-                    await targetCharacteristic.readValue();
-                } catch(e) {
-                    // Triggert den PIN-Dialog auf Android-Systemebene
+                    const service = await server.getPrimaryService(SPECIALIZED_SERVICE);
+                    targetCharacteristic = await service.getCharacteristic(SPECIALIZED_CHAR);
+                } catch (e) {
+                    // 2. Fallback: Alle aktiven Services durchsuchen
+                    const services = await server.getPrimaryServices();
+                    for (let s of services) {
+                        try {
+                            let chars = await s.getCharacteristics();
+                            for (let c of chars) {
+                                if (c.properties.write || c.properties.writeWithoutResponse) {
+                                    targetCharacteristic = c;
+                                    break;
+                                }
+                            }
+                            if (targetCharacteristic) break;
+                        } catch(err){}
+                    }
                 }
 
-                setStatus("Verbunden & Autorisierte Schnittstelle!");
-                document.getElementById('connectBtn').disabled = true;
-                document.getElementById('circumferenceSelect').disabled = false;
-                document.getElementById('sendBtn').disabled = false;
+                if (targetCharacteristic) {
+                    setStatus("Verbunden & Autorisierung aktiv!");
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('circumferenceSelect').disabled = false;
+                    document.getElementById('sendBtn').disabled = false;
+                } else {
+                    setStatus("Fehler: Kein beschreibbarer Kanal gefunden.");
+                }
 
             } catch (e) {
                 setStatus("Fehler: " + e.message);
@@ -154,11 +171,24 @@
                     return;
                 }
                 const val = document.getElementById('circumferenceSelect').value;
+                const data = new Uint8Array(hexMap[val]);
                 setStatus("Sende " + val + " mm...");
-                await targetCharacteristic.writeValue(new Uint8Array(hexMap[val]));
-                setStatus("Erfolgreich gesendet! Umfang auf " + val + " mm geändert.");
+
+                // Versuch A: Standard Schreiben
+                try {
+                    await targetCharacteristic.writeValue(data);
+                } catch (err1) {
+                    // Versuch B: Schreiben ohne Response
+                    if (targetCharacteristic.writeValueWithoutResponse) {
+                        await targetCharacteristic.writeValueWithoutResponse(data);
+                    } else {
+                        throw err1;
+                    }
+                }
+
+                setStatus("Erfolgreich! Umfang auf " + val + " mm geändert.");
             } catch (e) {
-                setStatus("Fehler beim Schreiben: " + e.message + "\nBitte erneut auf '1. Mit Bike verbinden' tippen.");
+                setStatus("Fehler beim Schreiben: " + e.message);
                 console.error(e);
             }
         }
