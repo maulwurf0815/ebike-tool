@@ -56,9 +56,7 @@
             color: white;
         }
         #connectBtn { background-color: #3498db; }
-        #connectBtn:hover { background-color: #2980b9; }
         #sendBtn { background-color: #2ecc71; margin-top: 20px; }
-        #sendBtn:hover { background-color: #27ae60; }
         #sendBtn:disabled, #connectBtn:disabled { background-color: #bdc3c7; cursor: not-allowed; }
         .status {
             margin-top: 20px;
@@ -67,7 +65,7 @@
             background: #eef2f5;
             padding: 12px;
             border-radius: 8px;
-            color: #7f8c8d;
+            color: #2c3e50;
             border: 1px solid #e0e6ed;
             word-break: break-all;
         }
@@ -100,9 +98,6 @@
     </div>
 
     <script>
-        const SERVICE_UUID = '00000001-0000-1000-8000-00805f9b34fb';
-        const CHAR_UUID    = '00000002-0000-1000-8000-00805f9b34fb';
-
         let targetCharacteristic = null;
 
         const hexMap = {
@@ -119,21 +114,42 @@
         async function connectBLE() {
             try {
                 setStatus("Suche Bike...");
-                // Zeigt ALLE Geräte an, damit das Bike garantiert in der Liste auftaucht:
+                // Erlaubt den Zugriff auf ALLE Services des Bikes ohne feste Sperre:
                 const dev = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
-                    optionalServices: [SERVICE_UUID]
+                    optionalServices: [
+                        '00000001-0000-1000-8000-00805f9b34fb',
+                        '0000180a-0000-1000-8000-00805f9b34fb',
+                        '00001800-0000-1000-8000-00805f9b34fb',
+                        '00001801-0000-1000-8000-00805f9b34fb',
+                        '0000fe59-0000-1000-8000-00805f9b34fb'
+                    ]
                 });
                 
-                setStatus("Verbinde...");
+                setStatus("Verbinde mit " + dev.name + "...");
                 const server = await dev.gatt.connect();
-                const service = await server.getPrimaryService(SERVICE_UUID);
-                targetCharacteristic = await service.getCharacteristic(CHAR_UUID);
 
-                setStatus("Verbunden!");
-                document.getElementById('connectBtn').disabled = true;
-                document.getElementById('circumferenceSelect').disabled = false;
-                document.getElementById('sendBtn').disabled = false;
+                setStatus("Suche Services...");
+                const services = await server.getPrimaryServices();
+                
+                let foundUUIDs = services.map(s => s.uuid).join("\n");
+                
+                // Versuche den ersten gefundenen Dienst zu laden
+                if (services.length > 0) {
+                    const firstService = services[0];
+                    const characteristics = await firstService.getCharacteristics();
+                    if (characteristics.length > 0) {
+                        targetCharacteristic = characteristics[0];
+                        setStatus("Verbunden! Gefundene Services:\n" + foundUUIDs);
+                        document.getElementById('connectBtn').disabled = true;
+                        document.getElementById('circumferenceSelect').disabled = false;
+                        document.getElementById('sendBtn').disabled = false;
+                        return;
+                    }
+                }
+                
+                setStatus("Verbunden, aber keine beschreibbare Characteristic gefunden.\nServices:\n" + foundUUIDs);
+
             } catch (e) {
                 setStatus("Fehler: " + e.message);
                 console.error(e);
@@ -142,6 +158,10 @@
 
         async function sendConfig() {
             try {
+                if (!targetCharacteristic) {
+                    setStatus("Keine Verbindung zur Charakteristik!");
+                    return;
+                }
                 const val = document.getElementById('circumferenceSelect').value;
                 setStatus("Sende " + val + " mm...");
                 await targetCharacteristic.writeValue(new Uint8Array(hexMap[val]));
