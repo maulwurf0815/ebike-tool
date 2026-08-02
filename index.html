@@ -98,8 +98,8 @@
     </div>
 
     <script>
-        const SPECIALIZED_SERVICE = '00000001-0000-1000-8000-00805f9b34fb';
-        const SPECIALIZED_CHAR    = '00000002-0000-1000-8000-00805f9b34fb';
+        const SPEC_SERVICE = '00000001-0000-1000-8000-00805f9b34fb';
+        const SPEC_CHAR    = '00000002-0000-1000-8000-00805f9b34fb';
 
         let targetCharacteristic = null;
 
@@ -116,18 +116,29 @@
 
         async function connectBLE() {
             try {
-                setStatus("Öffne Bluetooth-Auswahl...");
+                setStatus("Suche E-Bike...");
+                
+                // Wir nutzen optionalServices ohne acceptAllDevices für maximale Rechtefreigabe
                 const dev = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    optionalServices: [SPECIALIZED_SERVICE]
+                    filters: [
+                        { namePrefix: 'WSBC' },
+                        { namePrefix: 'Specialized' },
+                        { services: [SPEC_SERVICE] }
+                    ],
+                    optionalServices: [
+                        SPEC_SERVICE,
+                        '00001800-0000-1000-8000-00805f9b34fb',
+                        '00001801-0000-1000-8000-00805f9b34fb',
+                        '0000180f-0000-1000-8000-00805f9b34fb'
+                    ]
                 });
                 
-                setStatus("Verbinde mit " + (dev.name || "Gerät") + "...");
+                setStatus("Verbinde mit " + (dev.name || "Bike") + "...");
                 const server = await dev.gatt.connect();
 
-                setStatus("Greife auf Schnittstelle zu...");
-                const service = await server.getPrimaryService(SPECIALIZED_SERVICE);
-                targetCharacteristic = await service.getCharacteristic(SPECIALIZED_CHAR);
+                setStatus("Greife auf E-Bike Service zu...");
+                const service = await server.getPrimaryService(SPEC_SERVICE);
+                targetCharacteristic = await service.getCharacteristic(SPEC_CHAR);
 
                 setStatus("Erfolgreich verbunden! Wähle den Umfang.");
                 document.getElementById('connectBtn').disabled = true;
@@ -135,8 +146,34 @@
                 document.getElementById('sendBtn').disabled = false;
 
             } catch (e) {
-                setStatus("Fehler: " + e.message);
-                console.error(e);
+                // Fallback, falls der Namens-Filter das Bike auf manchen Android-Ständen versteckt
+                if (e.name === 'NotFoundError' || e.message.includes('User cancelled')) {
+                    setStatus("Verbindung abgebrochen.");
+                    return;
+                }
+                
+                // Fallback-Versuch mit breiterem Filter
+                try {
+                    setStatus("Versuche alternativen Scan...");
+                    const dev = await navigator.bluetooth.requestDevice({
+                        acceptAllDevices: true,
+                        optionalServices: [
+                            SPEC_SERVICE,
+                            '00001800-0000-1000-8000-00805f9b34fb',
+                            '00001801-0000-1000-8000-00805f9b34fb'
+                        ]
+                    });
+                    const server = await dev.gatt.connect();
+                    const service = await server.getPrimaryService(SPEC_SERVICE);
+                    targetCharacteristic = await service.getCharacteristic(SPEC_CHAR);
+                    
+                    setStatus("Erfolgreich verbunden!");
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('circumferenceSelect').disabled = false;
+                    document.getElementById('sendBtn').disabled = false;
+                } catch(err2) {
+                    setStatus("Fehler: " + err2.message);
+                }
             }
         }
 
@@ -163,7 +200,6 @@
                 setStatus("Erfolgreich gesendet! Umfang auf " + val + " mm geändert.");
             } catch (e) {
                 setStatus("Fehler beim Schreiben: " + e.message);
-                console.error(e);
             }
         }
     </script>
