@@ -119,10 +119,12 @@
         async function connectBLE() {
             try {
                 setStatus("Suche Bike...");
+                // Zeigt ALLE Geräte an, damit das Bike garantiert in der Liste auftaucht:
                 const dev = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
                     optionalServices: [SERVICE_UUID]
                 });
+                
                 setStatus("Verbinde...");
                 const server = await dev.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
