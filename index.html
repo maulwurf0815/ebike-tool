@@ -98,8 +98,8 @@
     </div>
 
     <script>
-        const SPEC_SERVICE = '00000001-0000-1000-8000-00805f9b34fb';
-        const SPEC_CHAR    = '00000002-0000-1000-8000-00805f9b34fb';
+        const SPECIALIZED_SERVICE = '00000001-0000-1000-8000-00805f9b34fb';
+        const SPECIALIZED_CHAR    = '00000002-0000-1000-8000-00805f9b34fb';
 
         let targetCharacteristic = null;
 
@@ -116,64 +116,27 @@
 
         async function connectBLE() {
             try {
-                setStatus("Suche E-Bike...");
-                
-                // Wir nutzen optionalServices ohne acceptAllDevices für maximale Rechtefreigabe
+                setStatus("Suche Bike...");
                 const dev = await navigator.bluetooth.requestDevice({
-                    filters: [
-                        { namePrefix: 'WSBC' },
-                        { namePrefix: 'Specialized' },
-                        { services: [SPEC_SERVICE] }
-                    ],
-                    optionalServices: [
-                        SPEC_SERVICE,
-                        '00001800-0000-1000-8000-00805f9b34fb',
-                        '00001801-0000-1000-8000-00805f9b34fb',
-                        '0000180f-0000-1000-8000-00805f9b34fb'
-                    ]
+                    acceptAllDevices: true,
+                    optionalServices: [SPECIALIZED_SERVICE]
                 });
                 
-                setStatus("Verbinde mit " + (dev.name || "Bike") + "...");
+                setStatus("Verbinde GATT-Server...");
                 const server = await dev.gatt.connect();
 
-                setStatus("Greife auf E-Bike Service zu...");
-                const service = await server.getPrimaryService(SPEC_SERVICE);
-                targetCharacteristic = await service.getCharacteristic(SPEC_CHAR);
+                setStatus("Suche Steuerungskanal...");
+                const service = await server.getPrimaryService(SPECIALIZED_SERVICE);
+                targetCharacteristic = await service.getCharacteristic(SPECIALIZED_CHAR);
 
-                setStatus("Erfolgreich verbunden! Wähle den Umfang.");
+                setStatus("Verbunden! Umfang wählen & senden.");
                 document.getElementById('connectBtn').disabled = true;
                 document.getElementById('circumferenceSelect').disabled = false;
                 document.getElementById('sendBtn').disabled = false;
 
             } catch (e) {
-                // Fallback, falls der Namens-Filter das Bike auf manchen Android-Ständen versteckt
-                if (e.name === 'NotFoundError' || e.message.includes('User cancelled')) {
-                    setStatus("Verbindung abgebrochen.");
-                    return;
-                }
-                
-                // Fallback-Versuch mit breiterem Filter
-                try {
-                    setStatus("Versuche alternativen Scan...");
-                    const dev = await navigator.bluetooth.requestDevice({
-                        acceptAllDevices: true,
-                        optionalServices: [
-                            SPEC_SERVICE,
-                            '00001800-0000-1000-8000-00805f9b34fb',
-                            '00001801-0000-1000-8000-00805f9b34fb'
-                        ]
-                    });
-                    const server = await dev.gatt.connect();
-                    const service = await server.getPrimaryService(SPEC_SERVICE);
-                    targetCharacteristic = await service.getCharacteristic(SPEC_CHAR);
-                    
-                    setStatus("Erfolgreich verbunden!");
-                    document.getElementById('connectBtn').disabled = true;
-                    document.getElementById('circumferenceSelect').disabled = false;
-                    document.getElementById('sendBtn').disabled = false;
-                } catch(err2) {
-                    setStatus("Fehler: " + err2.message);
-                }
+                setStatus("Fehler: " + e.message);
+                console.error(e);
             }
         }
 
@@ -187,19 +150,11 @@
                 const data = new Uint8Array(hexMap[val]);
                 setStatus("Sende " + val + " mm...");
 
-                try {
-                    await targetCharacteristic.writeValue(data);
-                } catch (err1) {
-                    if (targetCharacteristic.writeValueWithoutResponse) {
-                        await targetCharacteristic.writeValueWithoutResponse(data);
-                    } else {
-                        throw err1;
-                    }
-                }
-
-                setStatus("Erfolgreich gesendet! Umfang auf " + val + " mm geändert.");
+                await targetCharacteristic.writeValue(data);
+                setStatus("Erfolgreich! Umfang auf " + val + " mm geändert.");
             } catch (e) {
                 setStatus("Fehler beim Schreiben: " + e.message);
+                console.error(e);
             }
         }
     </script>
