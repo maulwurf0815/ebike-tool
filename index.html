@@ -98,9 +98,6 @@
     </div>
 
     <script>
-        const SPECIALIZED_SERVICE = '00000001-0000-1000-8000-00805f9b34fb';
-        const SPECIALIZED_CHAR    = '00000002-0000-1000-8000-00805f9b34fb';
-
         let targetCharacteristic = null;
 
         const hexMap = {
@@ -116,29 +113,41 @@
 
         async function connectBLE() {
             try {
-                setStatus("Wähle dein Bike aus...");
+                setStatus("Öffne Bluetooth-Auswahl...");
+                // Komplett ohne Filter, damit Chrome den Auswahldialog garantiert öffnet
                 const dev = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    optionalServices: [SPECIALIZED_SERVICE, '0000180f-0000-1000-8000-00805f9b34fb', '00001816-0000-1000-8000-00805f9b34fb']
+                    acceptAllDevices: true
                 });
                 
-                setStatus("Verbinde GATT...");
+                setStatus("Verbinde mit " + (dev.name || "Gerät") + "...");
                 const server = await dev.gatt.connect();
 
-                setStatus("Lese verfuegbare Services...");
+                setStatus("Durchsuche Bike-Kanäle...");
                 const services = await server.getPrimaryServices();
-                let foundUuids = services.map(s => s.uuid.substring(0, 8)).join(", ");
+                
+                for (let service of services) {
+                    try {
+                        const characteristics = await service.getCharacteristics();
+                        for (let char of characteristics) {
+                            // Wir suchen nach einer Eigenschaft zum Schreiben
+                            if (char.properties.write || char.properties.writeWithoutResponse) {
+                                targetCharacteristic = char;
+                                break;
+                            }
+                        }
+                        if (targetCharacteristic) break;
+                    } catch (err) {
+                        // Ignorieren, falls ein Service blockiert
+                    }
+                }
 
-                // Versuche den Specialized Service zu greifen
-                try {
-                    const specService = await server.getPrimaryService(SPECIALIZED_SERVICE);
-                    targetCharacteristic = await specService.getCharacteristic(SPECIALIZED_CHAR);
-                    setStatus("Erfolgreich verbunden! Waehle den Umfang.");
+                if (targetCharacteristic) {
+                    setStatus("Erfolgreich verbunden! Wähle den Umfang.");
                     document.getElementById('connectBtn').disabled = true;
                     document.getElementById('circumferenceSelect').disabled = false;
                     document.getElementById('sendBtn').disabled = false;
-                } catch(errService) {
-                    setStatus("Gefundene Services: [" + foundUuids + "] - Der Specialized-Dienst fehlt auf diesem Geraet!");
+                } else {
+                    setStatus("Verbunden, aber kein beschreibbarer Kanal gefunden.");
                 }
 
             } catch (e) {
@@ -149,14 +158,24 @@
 
         async function sendConfig() {
             try {
-                if (!targetCharacteristic) return;
+                if (!targetCharacteristic) {
+                    setStatus("Keine Verbindung!");
+                    return;
+                }
                 const val = document.getElementById('circumferenceSelect').value;
                 const data = new Uint8Array(hexMap[val]);
                 setStatus("Sende " + val + " mm...");
-                await targetCharacteristic.writeValue(data);
-                setStatus("Erfolgreich gesendet! Umfang geändert.");
+
+                if (targetCharacteristic.writeValueWithoutResponse) {
+                    await targetCharacteristic.writeValueWithoutResponse(data);
+                } else {
+                    await targetCharacteristic.writeValue(data);
+                }
+
+                setStatus("Erfolgreich gesendet! Umfang auf " + val + " mm geändert.");
             } catch (e) {
                 setStatus("Fehler beim Schreiben: " + e.message);
+                console.error(e);
             }
         }
     </script>
