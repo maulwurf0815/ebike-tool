@@ -126,37 +126,24 @@
                 const server = await dev.gatt.connect();
 
                 setStatus("Suche Steuerungskanal...");
-                targetCharacteristic = null;
+                const service = await server.getPrimaryService(SPECIALIZED_SERVICE);
+                targetCharacteristic = await service.getCharacteristic(SPECIALIZED_CHAR);
 
-                // 1. Direktversuch über Specialized UUID
+                // Aktuellen Wert auslesen
                 try {
-                    const service = await server.getPrimaryService(SPECIALIZED_SERVICE);
-                    targetCharacteristic = await service.getCharacteristic(SPECIALIZED_CHAR);
-                } catch (e) {
-                    // 2. Fallback: Alle aktiven Services durchsuchen
-                    const services = await server.getPrimaryServices();
-                    for (let s of services) {
-                        try {
-                            let chars = await s.getCharacteristics();
-                            for (let c of chars) {
-                                if (c.properties.write || c.properties.writeWithoutResponse) {
-                                    targetCharacteristic = c;
-                                    break;
-                                }
-                            }
-                            if (targetCharacteristic) break;
-                        } catch(err){}
+                    const rawVal = await targetCharacteristic.readValue();
+                    let hexStr = [];
+                    for (let i = 0; i < rawVal.byteLength; i++) {
+                        hexStr.push('0x' + rawVal.getUint8(i).toString(16).padStart(2, '0'));
                     }
+                    setStatus("Verbunden! Aktueller Byte-Wert im Bike: " + hexStr.join(" "));
+                } catch(readErr) {
+                    setStatus("Verbunden!");
                 }
 
-                if (targetCharacteristic) {
-                    setStatus("Verbunden & Autorisierung aktiv!");
-                    document.getElementById('connectBtn').disabled = true;
-                    document.getElementById('circumferenceSelect').disabled = false;
-                    document.getElementById('sendBtn').disabled = false;
-                } else {
-                    setStatus("Fehler: Kein beschreibbarer Kanal gefunden.");
-                }
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('circumferenceSelect').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
 
             } catch (e) {
                 setStatus("Fehler: " + e.message);
@@ -174,19 +161,22 @@
                 const data = new Uint8Array(hexMap[val]);
                 setStatus("Sende " + val + " mm...");
 
-                // Versuch A: Standard Schreiben
-                try {
-                    await targetCharacteristic.writeValue(data);
-                } catch (err1) {
-                    // Versuch B: Schreiben ohne Response
-                    if (targetCharacteristic.writeValueWithoutResponse) {
-                        await targetCharacteristic.writeValueWithoutResponse(data);
-                    } else {
-                        throw err1;
-                    }
-                }
+                await targetCharacteristic.writeValue(data);
 
-                setStatus("Erfolgreich! Umfang auf " + val + " mm geändert.");
+                // Zur Kontrolle direkt neu auslesen
+                setTimeout(async () => {
+                    try {
+                        const rawVal = await targetCharacteristic.readValue();
+                        let hexStr = [];
+                        for (let i = 0; i < rawVal.byteLength; i++) {
+                            hexStr.push('0x' + rawVal.getUint8(i).toString(16).padStart(2, '0'));
+                        }
+                        setStatus("Gesendet! Neuer Byte-Wert im Bike: " + hexStr.join(" "));
+                    } catch(readErr) {
+                        setStatus("Erfolgreich gesendet! Umfang geändert.");
+                    }
+                }, 500);
+
             } catch (e) {
                 setStatus("Fehler beim Schreiben: " + e.message);
                 console.error(e);
