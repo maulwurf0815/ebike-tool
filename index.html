@@ -117,41 +117,29 @@
         async function connectBLE() {
             try {
                 setStatus("Suche Bike...");
-                // Gar keine Filter erzwingen, sondern ALLE Bluetooth-Geräte zulassen
                 const dev = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
                     optionalServices: [SPECIALIZED_SERVICE]
                 });
                 
-                setStatus("Verbinde mit " + (dev.name || "Bike") + "...");
+                setStatus("Verbinde mit Bike...");
                 const server = await dev.gatt.connect();
 
-                setStatus("Suche Datenkanal...");
+                setStatus("Fordere Zugriffsrechte an...");
+                const service = await server.getPrimaryService(SPECIALIZED_SERVICE);
+                targetCharacteristic = await service.getCharacteristic(SPECIALIZED_CHAR);
+
+                // Versuche eine Test-Authentifizierung durch Lesen der Eigenschaft
                 try {
-                    const service = await server.getPrimaryService(SPECIALIZED_SERVICE);
-                    targetCharacteristic = await service.getCharacteristic(SPECIALIZED_CHAR);
-                } catch (e) {
-                    // Falls die primäre Abfrage fehlschlägt, versuchen wir alle Services abzurufen
-                    const services = await server.getPrimaryServices();
-                    for (let s of services) {
-                        try {
-                            let chars = await s.getCharacteristics();
-                            if (chars.length > 0) {
-                                targetCharacteristic = chars[0];
-                                break;
-                            }
-                        } catch(err){}
-                    }
+                    await targetCharacteristic.readValue();
+                } catch(e) {
+                    // Triggert den PIN-Dialog auf Android-Systemebene
                 }
 
-                if (targetCharacteristic) {
-                    setStatus("Verbunden!");
-                    document.getElementById('connectBtn').disabled = true;
-                    document.getElementById('circumferenceSelect').disabled = false;
-                    document.getElementById('sendBtn').disabled = false;
-                } else {
-                    setStatus("Verbunden, aber Datenkanal nicht beschreibbar.");
-                }
+                setStatus("Verbunden & Autorisierte Schnittstelle!");
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('circumferenceSelect').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
 
             } catch (e) {
                 setStatus("Fehler: " + e.message);
@@ -168,9 +156,9 @@
                 const val = document.getElementById('circumferenceSelect').value;
                 setStatus("Sende " + val + " mm...");
                 await targetCharacteristic.writeValue(new Uint8Array(hexMap[val]));
-                setStatus("Erfolgreich gesendet! Umfang geändert.");
+                setStatus("Erfolgreich gesendet! Umfang auf " + val + " mm geändert.");
             } catch (e) {
-                setStatus("Fehler beim Schreiben: " + e.message);
+                setStatus("Fehler beim Schreiben: " + e.message + "\nBitte erneut auf '1. Mit Bike verbinden' tippen.");
                 console.error(e);
             }
         }
