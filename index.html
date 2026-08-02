@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>E-Bike BLE Konfigurator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            padding: 15px;
+            max-width: 400px;
+            margin: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 90vh;
+        }
+        .card {
+            background: #fff;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+            width: 100%;
+            box-sizing: border-box;
+        }
+        h3 {
+            text-align: center;
+            margin-top: 0;
+            color: #2c3e50;
+            font-size: 22px;
+        }
+        label {
+            font-size: 14px;
+            font-weight: bold;
+            display: block;
+            margin-top: 20px;
+            color: #7f8c8d;
+        }
+        select, button {
+            width: 100%;
+            padding: 15px;
+            margin-top: 10px;
+            border-radius: 10px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            box-sizing: border-box;
+            transition: all 0.2s ease;
+        }
+        button {
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            color: white;
+        }
+        #connectBtn { background-color: #3498db; }
+        #connectBtn:hover { background-color: #2980b9; }
+        #sendBtn { background-color: #2ecc71; margin-top: 20px; }
+        #sendBtn:hover { background-color: #27ae60; }
+        #sendBtn:disabled, #connectBtn:disabled { background-color: #bdc3c7; cursor: not-allowed; }
+        .status {
+            margin-top: 20px;
+            font-size: 13px;
+            text-align: center;
+            background: #eef2f5;
+            padding: 12px;
+            border-radius: 8px;
+            color: #7f8c8d;
+            border: 1px solid #e0e6ed;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h3>E-Bike Umfang</h3>
+        <button id="connectBtn" onclick="connectBLE()">1. Mit Bike verbinden</button>
+        
+        <label for="circumferenceSelect">Neuer Radumfang:</label>
+        <select id="circumferenceSelect" disabled>
+            <option value="0800">800 mm</option>
+            <option value="0900">900 mm</option>
+            <option value="1000">1000 mm</option>
+            <option value="1100">1100 mm</option>
+            <option value="1200">1200 mm</option>
+            <option value="1300">1300 mm</option>
+            <option value="1400">1400 mm</option>
+            <option value="1500">1500 mm</option>
+            <option value="1600">1600 mm</option>
+            <option value="1700">1700 mm</option>
+            <option value="1800">1800 mm</option>
+            <option value="1900" selected>1900 mm (Empfohlen)</option>
+        </select>
+
+        <button id="sendBtn" onclick="sendConfig()" disabled>2. Umfang senden</button>
+        <div id="status" class="status">Status: Bereit zum Verbinden</div>
+    </div>
+
+    <script>
+        const SERVICE_UUID = '00000001-0000-1000-8000-00805f9b34fb';
+        const CHAR_UUID    = '00000002-0000-1000-8000-00805f9b34fb';
+
+        let targetCharacteristic = null;
+
+        const hexMap = {
+            "0800": [0x02, 0x00, 0x20, 0x03], "0900": [0x02, 0x00, 0x84, 0x03],
+            "1000": [0x02, 0x00, 0xe8, 0x03], "1100": [0x02, 0x00, 0x4c, 0x04],
+            "1200": [0x02, 0x00, 0xb0, 0x04], "1300": [0x02, 0x00, 0x14, 0x05],
+            "1400": [0x02, 0x00, 0x78, 0x05], "1500": [0x02, 0x00, 0xdc, 0x05],
+            "1600": [0x02, 0x00, 0x40, 0x06], "1700": [0x02, 0x00, 0xa4, 0x06],
+            "1800": [0x02, 0x00, 0x08, 0x07], "1900": [0x02, 0x00, 0x6c, 0x07]
+        };
+
+        function setStatus(t) { document.getElementById('status').innerText = t; }
+
+        async function connectBLE() {
+            try {
+                setStatus("Suche Bike...");
+                const dev = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: [SERVICE_UUID]
+                });
+                setStatus("Verbinde...");
+                const server = await dev.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                targetCharacteristic = await service.getCharacteristic(CHAR_UUID);
+
+                setStatus("Verbunden!");
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('circumferenceSelect').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+            } catch (e) {
+                setStatus("Fehler: " + e.message);
+                console.error(e);
+            }
+        }
+
+        async function sendConfig() {
+            try {
+                const val = document.getElementById('circumferenceSelect').value;
+                setStatus("Sende " + val + " mm...");
+                await targetCharacteristic.writeValue(new Uint8Array(hexMap[val]));
+                setStatus("Erfolgreich gesendet!");
+            } catch (e) {
+                setStatus("Fehler beim Schreiben: " + e.message);
+                console.error(e);
+            }
+        }
+    </script>
+</body>
+</html>
