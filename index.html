@@ -98,6 +98,9 @@
     </div>
 
     <script>
+        const SPECIALIZED_SERVICE = '00000001-0000-1000-8000-00805f9b34fb';
+        const SPECIALIZED_CHAR    = '00000002-0000-1000-8000-00805f9b34fb';
+
         let targetCharacteristic = null;
 
         const hexMap = {
@@ -114,41 +117,22 @@
         async function connectBLE() {
             try {
                 setStatus("Suche Bike...");
-                // Erlaubt den Zugriff auf ALLE Services des Bikes ohne feste Sperre:
                 const dev = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
-                    optionalServices: [
-                        '00000001-0000-1000-8000-00805f9b34fb',
-                        '0000180a-0000-1000-8000-00805f9b34fb',
-                        '00001800-0000-1000-8000-00805f9b34fb',
-                        '00001801-0000-1000-8000-00805f9b34fb',
-                        '0000fe59-0000-1000-8000-00805f9b34fb'
-                    ]
+                    optionalServices: [SPECIALIZED_SERVICE]
                 });
                 
                 setStatus("Verbinde mit " + dev.name + "...");
                 const server = await dev.gatt.connect();
 
-                setStatus("Suche Services...");
-                const services = await server.getPrimaryServices();
-                
-                let foundUUIDs = services.map(s => s.uuid).join("\n");
-                
-                // Versuche den ersten gefundenen Dienst zu laden
-                if (services.length > 0) {
-                    const firstService = services[0];
-                    const characteristics = await firstService.getCharacteristics();
-                    if (characteristics.length > 0) {
-                        targetCharacteristic = characteristics[0];
-                        setStatus("Verbunden! Gefundene Services:\n" + foundUUIDs);
-                        document.getElementById('connectBtn').disabled = true;
-                        document.getElementById('circumferenceSelect').disabled = false;
-                        document.getElementById('sendBtn').disabled = false;
-                        return;
-                    }
-                }
-                
-                setStatus("Verbunden, aber keine beschreibbare Characteristic gefunden.\nServices:\n" + foundUUIDs);
+                setStatus("Lade Specialized-Dienst...");
+                const service = await server.getPrimaryService(SPECIALIZED_SERVICE);
+                targetCharacteristic = await service.getCharacteristic(SPECIALIZED_CHAR);
+
+                setStatus("Erfolgreich verbunden!");
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('circumferenceSelect').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
 
             } catch (e) {
                 setStatus("Fehler: " + e.message);
@@ -165,7 +149,7 @@
                 const val = document.getElementById('circumferenceSelect').value;
                 setStatus("Sende " + val + " mm...");
                 await targetCharacteristic.writeValue(new Uint8Array(hexMap[val]));
-                setStatus("Erfolgreich gesendet!");
+                setStatus("Erfolgreich gesendet! Umfang geändert.");
             } catch (e) {
                 setStatus("Fehler beim Schreiben: " + e.message);
                 console.error(e);
