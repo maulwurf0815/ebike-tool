@@ -98,6 +98,9 @@
     </div>
 
     <script>
+        const SPECIALIZED_SERVICE = '00000001-0000-1000-8000-00805f9b34fb';
+        const SPECIALIZED_CHAR    = '00000002-0000-1000-8000-00805f9b34fb';
+
         let targetCharacteristic = null;
 
         const hexMap = {
@@ -114,41 +117,22 @@
         async function connectBLE() {
             try {
                 setStatus("Öffne Bluetooth-Auswahl...");
-                // Komplett ohne Filter, damit Chrome den Auswahldialog garantiert öffnet
                 const dev = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true
+                    acceptAllDevices: true,
+                    optionalServices: [SPECIALIZED_SERVICE]
                 });
                 
                 setStatus("Verbinde mit " + (dev.name || "Gerät") + "...");
                 const server = await dev.gatt.connect();
 
-                setStatus("Durchsuche Bike-Kanäle...");
-                const services = await server.getPrimaryServices();
-                
-                for (let service of services) {
-                    try {
-                        const characteristics = await service.getCharacteristics();
-                        for (let char of characteristics) {
-                            // Wir suchen nach einer Eigenschaft zum Schreiben
-                            if (char.properties.write || char.properties.writeWithoutResponse) {
-                                targetCharacteristic = char;
-                                break;
-                            }
-                        }
-                        if (targetCharacteristic) break;
-                    } catch (err) {
-                        // Ignorieren, falls ein Service blockiert
-                    }
-                }
+                setStatus("Greife auf Schnittstelle zu...");
+                const service = await server.getPrimaryService(SPECIALIZED_SERVICE);
+                targetCharacteristic = await service.getCharacteristic(SPECIALIZED_CHAR);
 
-                if (targetCharacteristic) {
-                    setStatus("Erfolgreich verbunden! Wähle den Umfang.");
-                    document.getElementById('connectBtn').disabled = true;
-                    document.getElementById('circumferenceSelect').disabled = false;
-                    document.getElementById('sendBtn').disabled = false;
-                } else {
-                    setStatus("Verbunden, aber kein beschreibbarer Kanal gefunden.");
-                }
+                setStatus("Erfolgreich verbunden! Wähle den Umfang.");
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('circumferenceSelect').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
 
             } catch (e) {
                 setStatus("Fehler: " + e.message);
@@ -166,10 +150,14 @@
                 const data = new Uint8Array(hexMap[val]);
                 setStatus("Sende " + val + " mm...");
 
-                if (targetCharacteristic.writeValueWithoutResponse) {
-                    await targetCharacteristic.writeValueWithoutResponse(data);
-                } else {
+                try {
                     await targetCharacteristic.writeValue(data);
+                } catch (err1) {
+                    if (targetCharacteristic.writeValueWithoutResponse) {
+                        await targetCharacteristic.writeValueWithoutResponse(data);
+                    } else {
+                        throw err1;
+                    }
                 }
 
                 setStatus("Erfolgreich gesendet! Umfang auf " + val + " mm geändert.");
