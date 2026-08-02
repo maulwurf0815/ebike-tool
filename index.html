@@ -67,7 +67,7 @@
             border-radius: 8px;
             color: #2c3e50;
             border: 1px solid #e0e6ed;
-            word-break: break-word;
+            word-break: break-all;
         }
     </style>
 </head>
@@ -116,34 +116,30 @@
 
         async function connectBLE() {
             try {
-                setStatus("Suche gekoppeltes Bike...");
+                setStatus("Wähle dein Bike aus...");
                 const dev = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
-                    optionalServices: [SPECIALIZED_SERVICE]
+                    optionalServices: [SPECIALIZED_SERVICE, '0000180f-0000-1000-8000-00805f9b34fb', '00001816-0000-1000-8000-00805f9b34fb']
                 });
                 
-                setStatus("Verbinde GATT-Server...");
+                setStatus("Verbinde GATT...");
                 const server = await dev.gatt.connect();
 
-                setStatus("Suche Steuerungskanal...");
-                const service = await server.getPrimaryService(SPECIALIZED_SERVICE);
-                targetCharacteristic = await service.getCharacteristic(SPECIALIZED_CHAR);
+                setStatus("Lese verfuegbare Services...");
+                const services = await server.getPrimaryServices();
+                let foundUuids = services.map(s => s.uuid.substring(0, 8)).join(", ");
 
-                // Aktuellen Wert auslesen
+                // Versuche den Specialized Service zu greifen
                 try {
-                    const rawVal = await targetCharacteristic.readValue();
-                    let hexStr = [];
-                    for (let i = 0; i < rawVal.byteLength; i++) {
-                        hexStr.push('0x' + rawVal.getUint8(i).toString(16).padStart(2, '0'));
-                    }
-                    setStatus("Verbunden! Aktueller Byte-Wert im Bike: " + hexStr.join(" "));
-                } catch(readErr) {
-                    setStatus("Verbunden!");
+                    const specService = await server.getPrimaryService(SPECIALIZED_SERVICE);
+                    targetCharacteristic = await specService.getCharacteristic(SPECIALIZED_CHAR);
+                    setStatus("Erfolgreich verbunden! Waehle den Umfang.");
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('circumferenceSelect').disabled = false;
+                    document.getElementById('sendBtn').disabled = false;
+                } catch(errService) {
+                    setStatus("Gefundene Services: [" + foundUuids + "] - Der Specialized-Dienst fehlt auf diesem Geraet!");
                 }
-
-                document.getElementById('connectBtn').disabled = true;
-                document.getElementById('circumferenceSelect').disabled = false;
-                document.getElementById('sendBtn').disabled = false;
 
             } catch (e) {
                 setStatus("Fehler: " + e.message);
@@ -153,33 +149,14 @@
 
         async function sendConfig() {
             try {
-                if (!targetCharacteristic) {
-                    setStatus("Keine Verbindung!");
-                    return;
-                }
+                if (!targetCharacteristic) return;
                 const val = document.getElementById('circumferenceSelect').value;
                 const data = new Uint8Array(hexMap[val]);
                 setStatus("Sende " + val + " mm...");
-
                 await targetCharacteristic.writeValue(data);
-
-                // Zur Kontrolle direkt neu auslesen
-                setTimeout(async () => {
-                    try {
-                        const rawVal = await targetCharacteristic.readValue();
-                        let hexStr = [];
-                        for (let i = 0; i < rawVal.byteLength; i++) {
-                            hexStr.push('0x' + rawVal.getUint8(i).toString(16).padStart(2, '0'));
-                        }
-                        setStatus("Gesendet! Neuer Byte-Wert im Bike: " + hexStr.join(" "));
-                    } catch(readErr) {
-                        setStatus("Erfolgreich gesendet! Umfang geändert.");
-                    }
-                }, 500);
-
+                setStatus("Erfolgreich gesendet! Umfang geändert.");
             } catch (e) {
                 setStatus("Fehler beim Schreiben: " + e.message);
-                console.error(e);
             }
         }
     </script>
